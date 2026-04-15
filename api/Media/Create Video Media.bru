@@ -1,0 +1,31 @@
+meta {
+  name: Create Video Media
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/media
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "title": "Big Buck Bunny",
+    "description": "Open-source animated short film by the Blender Institute",
+    "media_type": "video",
+    "format": "mp4",
+    "duration_secs": 596.0
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setVar("mediaId", res.body.id);
+  }
+}

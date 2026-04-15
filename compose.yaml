@@ -1,0 +1,54 @@
+services:
+  catalog-service:
+    build:
+      context: .
+      target: catalog-service
+    container_name: stream-media-catalog
+    ports:
+      - "3001:3001"
+    environment:
+      - CATALOG_PORT=3001
+      - DATABASE_PATH=/data/catalog.db
+      - RUST_LOG=catalog_service=info,tower_http=info
+    volumes:
+      - catalog-data:/data
+    restart: unless-stopped
+
+  streaming-service:
+    build:
+      context: .
+      target: streaming-service
+    container_name: stream-media-streaming
+    ports:
+      - "3002:3002"
+    environment:
+      - STREAMING_PORT=3002
+      - CATALOG_URL=http://catalog-service:3001
+      - MEDIA_STORE_PATH=/data/media-store
+      - RUST_LOG=streaming_service=info,tower_http=info
+    volumes:
+      - media-data:/data/media-store
+    depends_on:
+      - catalog-service
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      target: gateway
+    container_name: stream-media-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - GATEWAY_PORT=3000
+      - CATALOG_URL=http://catalog-service:3001
+      - STREAMING_URL=http://streaming-service:3002
+      - RUST_LOG=gateway=info,tower_http=info
+    depends_on:
+      - catalog-service
+      - streaming-service
+    restart: unless-stopped
+
+volumes:
+  catalog-data:
+  media-data:

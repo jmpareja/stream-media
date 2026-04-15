@@ -1,0 +1,26 @@
+meta {
+  name: Upload FLAC File
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/upload
+  body: multipartForm
+  auth: none
+}
+
+body:multipart-form {
+  title: Gymnopedie No. 1
+  description: Erik Satie's first Gymnopedie (lossless)
+  media_type: audio
+  format: flac
+  duration_secs: 186.0
+  file: @file(sample.flac)
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setVar("mediaId", res.body.id);
+  }
+}

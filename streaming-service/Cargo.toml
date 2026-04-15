@@ -1,0 +1,19 @@
+[package]
+name = "streaming-service"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+common = { workspace = true }
+axum = { version = "0.8", features = ["multipart"] }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+bytes = { workspace = true }
+mime_guess = { workspace = true }
+reqwest = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tower-http = { workspace = true }

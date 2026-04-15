@@ -1,0 +1,17 @@
+meta {
+  name: Search Media
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/media?search=bohemian
+  body: none
+  auth: none
+}
+
+params:query {
+  search: bohemian
+  ~limit: 20
+  ~offset: 0
+}

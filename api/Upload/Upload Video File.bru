@@ -1,0 +1,26 @@
+meta {
+  name: Upload Video File
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/upload
+  body: multipartForm
+  auth: none
+}
+
+body:multipart-form {
+  title: Big Buck Bunny - Trailer
+  description: Official trailer for the Blender open movie
+  media_type: video
+  format: mp4
+  duration_secs: 33.0
+  file: @file(sample.mp4)
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setVar("mediaId", res.body.id);
+  }
+}

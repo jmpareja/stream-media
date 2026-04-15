@@ -1,0 +1,24 @@
+meta {
+  name: Stream from Offset
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/stream/{{mediaId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Range: bytes=1048576-
+}
+
+docs {
+  Streams from 1MB offset to end of file.
+  Simulates seeking to a position in a media player.
+
+  Response includes:
+  - 206 Partial Content
+  - Content-Range: bytes 1048576-<end>/<total>
+}

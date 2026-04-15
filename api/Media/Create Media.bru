@@ -1,0 +1,31 @@
+meta {
+  name: Create Media
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/media
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "title": "Bohemian Rhapsody",
+    "description": "Queen's iconic rock opera from A Night at the Opera (1975)",
+    "media_type": "audio",
+    "format": "flac",
+    "duration_secs": 354.0
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setVar("mediaId", res.body.id);
+  }
+}

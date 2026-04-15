@@ -1,0 +1,30 @@
+meta {
+  name: Stream with Range
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/stream/{{mediaId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Range: bytes=0-65535
+}
+
+docs {
+  Streams a partial range of the media file (first 64KB).
+
+  Response includes:
+  - 206 Partial Content
+  - Content-Range: bytes 0-65535/<total>
+  - Accept-Ranges: bytes
+  - Content-Length: 65536
+
+  Modify the Range header to seek to any position:
+  - bytes=0-65535      (first 64KB)
+  - bytes=1048576-     (from 1MB to end)
+  - bytes=-1024        (last 1KB)
+}

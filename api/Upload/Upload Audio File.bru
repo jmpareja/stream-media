@@ -1,0 +1,26 @@
+meta {
+  name: Upload Audio File
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/upload
+  body: multipartForm
+  auth: none
+}
+
+body:multipart-form {
+  title: Clair de Lune
+  description: Debussy's Suite bergamasque, third movement
+  media_type: audio
+  format: mp3
+  duration_secs: 302.5
+  file: @file(sample.mp3)
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setVar("mediaId", res.body.id);
+  }
+}

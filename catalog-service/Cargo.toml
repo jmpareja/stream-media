@@ -1,0 +1,17 @@
+[package]
+name = "catalog-service"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+common = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tower-http = { workspace = true }
+rusqlite = { version = "0.32", features = ["bundled"] }

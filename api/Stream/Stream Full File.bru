@@ -1,0 +1,21 @@
+meta {
+  name: Stream Full File
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/stream/{{mediaId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Streams the entire media file.
+
+  Response includes:
+  - 200 OK
+  - Accept-Ranges: bytes (advertises range support)
+  - Content-Type set to the media MIME type
+  - Content-Length set to the full file size
+}
