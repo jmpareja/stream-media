@@ -14,6 +14,7 @@ pub struct GatewayState {
     pub client: reqwest::Client,
     pub catalog_url: String,
     pub streaming_url: String,
+    pub user_url: String,
 }
 
 async fn proxy_to_catalog(
@@ -21,6 +22,13 @@ async fn proxy_to_catalog(
     req: Request<Body>,
 ) -> Result<Response<Body>, AppError> {
     proxy::proxy_request(&state.client, &state.catalog_url, req, "/api").await
+}
+
+async fn proxy_to_user(
+    State(state): State<GatewayState>,
+    req: Request<Body>,
+) -> Result<Response<Body>, AppError> {
+    proxy::proxy_request(&state.client, &state.user_url, req, "/api").await
 }
 
 async fn proxy_to_streaming(
@@ -46,6 +54,8 @@ pub fn build_router(state: GatewayState) -> Router {
     Router::new()
         .route("/api/media", any(proxy_to_catalog))
         .route("/api/media/{*rest}", any(proxy_to_catalog))
+        .route("/api/users", any(proxy_to_user))
+        .route("/api/users/{*rest}", any(proxy_to_user))
         .route("/stream/{*rest}", any(proxy_to_streaming))
         .route("/upload", any(proxy_to_streaming))
         .layer(cors)

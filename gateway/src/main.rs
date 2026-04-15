@@ -20,6 +20,7 @@ async fn main() {
         client: reqwest::Client::new(),
         catalog_url: config.catalog_url,
         streaming_url: config.streaming_url,
+        user_url: config.user_url,
     };
 
     let app = routes::build_router(state);

@@ -80,3 +80,42 @@ pub struct ListMediaQuery {
     pub limit: Option<u32>,
     pub offset: Option<u32>,
 }
+
+// ── User models ──
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct User {
+    pub id: Uuid,
+    pub username: String,
+    pub email: String,
+    pub display_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateUserRequest {
+    pub username: String,
+    pub email: String,
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateUserRequest {
+    pub username: Option<String>,
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListUsersResponse {
+    pub items: Vec<User>,
+    pub total: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListUsersQuery {
+    pub search: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}

@@ -4,6 +4,7 @@ members = [
     "common",
     "catalog-service",
     "streaming-service",
+    "user-service",
     "gateway",
 ]
 

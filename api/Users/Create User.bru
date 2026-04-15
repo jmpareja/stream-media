@@ -1,0 +1,29 @@
+meta {
+  name: Create User
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/users
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "username": "jpareja",
+    "email": "jpareja@example.com",
+    "display_name": "Joel Pareja"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setVar("userId", res.body.id);
+  }
+}

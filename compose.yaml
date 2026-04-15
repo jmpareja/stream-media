@@ -32,6 +32,21 @@ services:
       - catalog-service
     restart: unless-stopped
 
+  user-service:
+    build:
+      context: .
+      target: user-service
+    container_name: stream-media-user
+    ports:
+      - "3003:3003"
+    environment:
+      - USER_PORT=3003
+      - USER_DATABASE_PATH=/data/users.db
+      - RUST_LOG=user_service=info,tower_http=info
+    volumes:
+      - user-data:/data
+    restart: unless-stopped
+
   gateway:
     build:
       context: .
@@ -43,12 +58,15 @@ services:
       - GATEWAY_PORT=3000
       - CATALOG_URL=http://catalog-service:3001
       - STREAMING_URL=http://streaming-service:3002
+      - USER_URL=http://user-service:3003
       - RUST_LOG=gateway=info,tower_http=info
     depends_on:
       - catalog-service
       - streaming-service
+      - user-service
     restart: unless-stopped
 
 volumes:
   catalog-data:
   media-data:
+  user-data:

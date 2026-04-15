@@ -1,0 +1,17 @@
+meta {
+  name: Search Users
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/users?search=joel
+  body: none
+  auth: none
+}
+
+params:query {
+  search: joel
+  ~limit: 20
+  ~offset: 0
+}
