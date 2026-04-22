@@ -7,7 +7,7 @@ use common::error::AppError;
 use common::models::{
     CreateMediaRequest, CreateSmbSourceRequest, ListMediaQuery, ListMediaResponse,
     ListSmbSourcesResponse, MediaItem, RegisterMediaRequest, RegisterSmbMediaRequest, SmbSource,
-    UpdateHlsStatusRequest, UpdateMediaRequest, UpdateSmbSourceRequest,
+    UpdateTranscodeStatusRequest, UpdateMediaRequest, UpdateSmbSourceRequest,
 };
 use uuid::Uuid;
 
@@ -72,12 +72,12 @@ pub async fn register_smb_media(
     Ok((StatusCode::CREATED, Json(item)))
 }
 
-pub async fn update_hls_status(
+pub async fn update_transcode_status(
     State(repo): State<Arc<SqliteCatalogRepository>>,
     Path(id): Path<Uuid>,
-    Json(req): Json<UpdateHlsStatusRequest>,
+    Json(req): Json<UpdateTranscodeStatusRequest>,
 ) -> Result<Json<MediaItem>, AppError> {
-    let item = repo.update_hls_status(id, req).await?;
+    let item = repo.update_transcode_status(id, req).await?;
     Ok(Json(item))
 }
 

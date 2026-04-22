@@ -19,7 +19,7 @@ pub fn build_router(repo: Arc<SqliteCatalogRepository>) -> Router {
         )
         .route("/media/register", post(handlers::register_upload))
         .route("/media/register-smb", post(handlers::register_smb_media))
-        .route("/media/{id}/hls-status", patch(handlers::update_hls_status))
+        .route("/media/{id}/transcode-status", patch(handlers::update_transcode_status))
         // SMB source routes
         .route(
             "/sources/smb",

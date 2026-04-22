@@ -4,9 +4,9 @@ use std::sync::{Arc, Mutex};
 use chrono::Utc;
 use common::error::AppError;
 use common::models::{
-    CreateMediaRequest, CreateSmbSourceRequest, HlsStatus, ListMediaQuery, ListMediaResponse,
+    CreateMediaRequest, CreateSmbSourceRequest, TranscodeStatus, ListMediaQuery, ListMediaResponse,
     ListSmbSourcesResponse, MediaItem, MediaSource, MediaType, RegisterMediaRequest,
-    RegisterSmbMediaRequest, SmbSource, UpdateHlsStatusRequest, UpdateMediaRequest,
+    RegisterSmbMediaRequest, SmbSource, UpdateTranscodeStatusRequest, UpdateMediaRequest,
     UpdateSmbSourceRequest,
 };
 use rusqlite::{params, Connection};
@@ -49,8 +49,9 @@ impl SqliteCatalogRepository {
                 duration_secs REAL,
                 source_type   TEXT NOT NULL DEFAULT 'local' CHECK(source_type IN ('local', 'smb')),
                 smb_source_id TEXT REFERENCES smb_sources(id),
-                hls_status    TEXT NOT NULL DEFAULT 'not_applicable' CHECK(hls_status IN ('pending', 'processing', 'ready', 'failed', 'not_applicable')),
-                hls_error     TEXT,
+                transcode_status    TEXT NOT NULL DEFAULT 'not_applicable' CHECK(transcode_status IN ('pending', 'processing', 'ready', 'failed', 'not_applicable')),
+                transcode_format    TEXT,
+                transcode_error     TEXT,
                 created_at    TEXT NOT NULL,
                 updated_at    TEXT NOT NULL
             );
@@ -60,16 +61,28 @@ impl SqliteCatalogRepository {
         )
         .map_err(|e| AppError::Internal(format!("failed to create tables: {e}")))?;
 
-        // Migrate: add HLS columns if missing
-        let has_hls: bool = conn
-            .prepare("SELECT hls_status FROM media_items LIMIT 0")
+        // Migrate: add transcode columns if missing
+        let has_transcode: bool = conn
+            .prepare("SELECT transcode_status FROM media_items LIMIT 0")
             .is_ok();
-        if !has_hls {
+        if !has_transcode {
             conn.execute_batch(
-                "ALTER TABLE media_items ADD COLUMN hls_status TEXT NOT NULL DEFAULT 'not_applicable' CHECK(hls_status IN ('pending', 'processing', 'ready', 'failed', 'not_applicable'));
-                 ALTER TABLE media_items ADD COLUMN hls_error TEXT;",
+                "ALTER TABLE media_items ADD COLUMN transcode_status TEXT NOT NULL DEFAULT 'not_applicable' CHECK(transcode_status IN ('pending', 'processing', 'ready', 'failed', 'not_applicable'));
+                 ALTER TABLE media_items ADD COLUMN transcode_format TEXT;
+                 ALTER TABLE media_items ADD COLUMN transcode_error TEXT;",
             )
-            .map_err(|e| AppError::Internal(format!("failed to migrate hls columns: {e}")))?;
+            .map_err(|e| AppError::Internal(format!("failed to migrate transcode columns: {e}")))?;
+        }
+
+        // Migrate: add transcode_format if missing (for DBs that had hls_status but not transcode_format)
+        let has_format: bool = conn
+            .prepare("SELECT transcode_format FROM media_items LIMIT 0")
+            .is_ok();
+        if !has_format {
+            conn.execute_batch(
+                "ALTER TABLE media_items ADD COLUMN transcode_format TEXT;",
+            )
+            .map_err(|e| AppError::Internal(format!("failed to migrate transcode_format: {e}")))?;
         }
 
         Ok(Self {
@@ -87,14 +100,14 @@ impl SqliteCatalogRepository {
             let id = Uuid::new_v4();
             let now = Utc::now();
 
-            let hls_status = if req.media_type == MediaType::Video {
-                HlsStatus::Pending
+            let transcode_status = if req.media_type == MediaType::Video {
+                TranscodeStatus::Pending
             } else {
-                HlsStatus::NotApplicable
+                TranscodeStatus::NotApplicable
             };
 
             conn.execute(
-                "INSERT INTO media_items (id, title, description, media_type, format, file_path, file_size, duration_secs, source_type, hls_status, created_at, updated_at)
+                "INSERT INTO media_items (id, title, description, media_type, format, file_path, file_size, duration_secs, source_type, transcode_status, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     id.to_string(),
@@ -106,7 +119,7 @@ impl SqliteCatalogRepository {
                     file_size as i64,
                     req.duration_secs,
                     MediaSource::Local.as_str(),
-                    hls_status.as_str(),
+                    transcode_status.as_str(),
                     now.to_rfc3339(),
                     now.to_rfc3339(),
                 ],
@@ -124,8 +137,9 @@ impl SqliteCatalogRepository {
                 duration_secs: req.duration_secs,
                 source: MediaSource::Local,
                 smb_source_id: None,
-                hls_status,
-                hls_error: None,
+                transcode_status,
+                transcode_format: None,
+                transcode_error: None,
                 created_at: now,
                 updated_at: now,
             })
@@ -141,14 +155,14 @@ impl SqliteCatalogRepository {
             let id = Uuid::new_v4();
             let now = Utc::now();
 
-            let hls_status = if req.media_type == MediaType::Video {
-                HlsStatus::Pending
+            let transcode_status = if req.media_type == MediaType::Video {
+                TranscodeStatus::Pending
             } else {
-                HlsStatus::NotApplicable
+                TranscodeStatus::NotApplicable
             };
 
             conn.execute(
-                "INSERT INTO media_items (id, title, description, media_type, format, file_path, file_size, duration_secs, source_type, hls_status, created_at, updated_at)
+                "INSERT INTO media_items (id, title, description, media_type, format, file_path, file_size, duration_secs, source_type, transcode_status, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     id.to_string(),
@@ -160,7 +174,7 @@ impl SqliteCatalogRepository {
                     req.file_size as i64,
                     req.duration_secs,
                     MediaSource::Local.as_str(),
-                    hls_status.as_str(),
+                    transcode_status.as_str(),
                     now.to_rfc3339(),
                     now.to_rfc3339(),
                 ],
@@ -178,8 +192,9 @@ impl SqliteCatalogRepository {
                 duration_secs: req.duration_secs,
                 source: MediaSource::Local,
                 smb_source_id: None,
-                hls_status,
-                hls_error: None,
+                transcode_status,
+                transcode_format: None,
+                transcode_error: None,
                 created_at: now,
                 updated_at: now,
             })
@@ -218,14 +233,14 @@ impl SqliteCatalogRepository {
             let id = Uuid::new_v4();
             let now = Utc::now();
 
-            let hls_status = if req.media_type == MediaType::Video {
-                HlsStatus::Pending
+            let transcode_status = if req.media_type == MediaType::Video {
+                TranscodeStatus::Pending
             } else {
-                HlsStatus::NotApplicable
+                TranscodeStatus::NotApplicable
             };
 
             conn.execute(
-                "INSERT INTO media_items (id, title, description, media_type, format, file_path, file_size, duration_secs, source_type, smb_source_id, hls_status, created_at, updated_at)
+                "INSERT INTO media_items (id, title, description, media_type, format, file_path, file_size, duration_secs, source_type, smb_source_id, transcode_status, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     id.to_string(),
@@ -238,7 +253,7 @@ impl SqliteCatalogRepository {
                     req.duration_secs,
                     MediaSource::Smb.as_str(),
                     source_id.to_string(),
-                    hls_status.as_str(),
+                    transcode_status.as_str(),
                     now.to_rfc3339(),
                     now.to_rfc3339(),
                 ],
@@ -256,8 +271,9 @@ impl SqliteCatalogRepository {
                 duration_secs: req.duration_secs,
                 source: MediaSource::Smb,
                 smb_source_id: Some(source_id),
-                hls_status,
-                hls_error: None,
+                transcode_status,
+                transcode_format: None,
+                transcode_error: None,
                 created_at: now,
                 updated_at: now,
             })
@@ -273,7 +289,7 @@ impl SqliteCatalogRepository {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, title, description, media_type, format, file_path, file_size, \
-                     duration_secs, source_type, smb_source_id, hls_status, hls_error, \
+                     duration_secs, source_type, smb_source_id, transcode_status, transcode_format, transcode_error, \
                      created_at, updated_at \
                      FROM media_items WHERE id = ?1",
                 )
@@ -330,7 +346,7 @@ impl SqliteCatalogRepository {
             // Fetch items
             let select_sql = format!(
                 "SELECT id, title, description, media_type, format, file_path, file_size, \
-                 duration_secs, source_type, smb_source_id, hls_status, hls_error, \
+                 duration_secs, source_type, smb_source_id, transcode_status, transcode_format, transcode_error, \
                  created_at, updated_at \
                  FROM media_items {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?"
             );
@@ -400,7 +416,7 @@ impl SqliteCatalogRepository {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, title, description, media_type, format, file_path, file_size, \
-                     duration_secs, source_type, smb_source_id, hls_status, hls_error, \
+                     duration_secs, source_type, smb_source_id, transcode_status, transcode_format, transcode_error, \
                      created_at, updated_at \
                      FROM media_items WHERE id = ?1",
                 )
@@ -432,7 +448,7 @@ impl SqliteCatalogRepository {
 
     // ── HLS Status ──
 
-    pub async fn update_hls_status(&self, id: Uuid, req: UpdateHlsStatusRequest) -> Result<MediaItem, AppError> {
+    pub async fn update_transcode_status(&self, id: Uuid, req: UpdateTranscodeStatusRequest) -> Result<MediaItem, AppError> {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
@@ -440,10 +456,11 @@ impl SqliteCatalogRepository {
 
             let changed = conn
                 .execute(
-                    "UPDATE media_items SET hls_status = ?1, hls_error = ?2, updated_at = ?3 WHERE id = ?4",
+                    "UPDATE media_items SET transcode_status = ?1, transcode_format = ?2, transcode_error = ?3, updated_at = ?4 WHERE id = ?5",
                     params![
-                        req.hls_status.as_str(),
-                        req.hls_error,
+                        req.transcode_status.as_str(),
+                        req.transcode_format,
+                        req.transcode_error,
                         now.to_rfc3339(),
                         id.to_string(),
                     ],
@@ -457,7 +474,7 @@ impl SqliteCatalogRepository {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, title, description, media_type, format, file_path, file_size, \
-                     duration_secs, source_type, smb_source_id, hls_status, hls_error, \
+                     duration_secs, source_type, smb_source_id, transcode_status, transcode_format, transcode_error, \
                      created_at, updated_at \
                      FROM media_items WHERE id = ?1",
                 )
@@ -760,7 +777,8 @@ impl SqliteCatalogRepository {
 // Column indices for media_items:
 // id(0), title(1), description(2), media_type(3), format(4), file_path(5),
 // file_size(6), duration_secs(7), source_type(8), smb_source_id(9),
-// hls_status(10), hls_error(11), created_at(12), updated_at(13)
+// transcode_status(10), transcode_format(11), transcode_error(12),
+// created_at(13), updated_at(14)
 fn row_to_media_item(row: &rusqlite::Row) -> Result<MediaItem, AppError> {
     let id_str: String = row
         .get(0)
@@ -777,17 +795,20 @@ fn row_to_media_item(row: &rusqlite::Row) -> Result<MediaItem, AppError> {
     let smb_source_id_str: Option<String> = row
         .get(9)
         .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?;
-    let hls_status_str: String = row
+    let transcode_status_str: String = row
         .get(10)
         .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?;
-    let hls_error: Option<String> = row
+    let transcode_format: Option<String> = row
         .get(11)
         .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?;
-    let created_str: String = row
+    let transcode_error: Option<String> = row
         .get(12)
         .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?;
-    let updated_str: String = row
+    let created_str: String = row
         .get(13)
+        .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?;
+    let updated_str: String = row
+        .get(14)
         .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?;
 
     let smb_source_id = smb_source_id_str
@@ -820,9 +841,10 @@ fn row_to_media_item(row: &rusqlite::Row) -> Result<MediaItem, AppError> {
         source: MediaSource::from_str(&source_type_str)
             .ok_or_else(|| AppError::Internal(format!("invalid source_type: {source_type_str}")))?,
         smb_source_id,
-        hls_status: HlsStatus::from_str(&hls_status_str)
-            .ok_or_else(|| AppError::Internal(format!("invalid hls_status: {hls_status_str}")))?,
-        hls_error,
+        transcode_status: TranscodeStatus::from_str(&transcode_status_str)
+            .ok_or_else(|| AppError::Internal(format!("invalid transcode_status: {transcode_status_str}")))?,
+        transcode_format,
+        transcode_error,
         created_at: chrono::DateTime::parse_from_rfc3339(&created_str)
             .map_err(|e| AppError::Internal(format!("invalid datetime: {e}")))?
             .with_timezone(&chrono::Utc),
