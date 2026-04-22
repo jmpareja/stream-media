@@ -1,10 +1,14 @@
 mod handlers;
 mod range;
 mod routes;
+mod transcode;
+
+use std::sync::Arc;
 
 use common::config::ServiceConfig;
 use handlers::AppState;
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 
 #[tokio::main]
 async fn main() {
@@ -22,10 +26,16 @@ async fn main() {
         .await
         .expect("failed to create media store directory");
 
+    let max_transcode_jobs: usize = std::env::var("TRANSCODE_MAX_JOBS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+
     let state = AppState {
         client: reqwest::Client::new(),
         catalog_url: config.catalog_url,
         media_store_path: config.media_store_path,
+        transcode_semaphore: Arc::new(Semaphore::new(max_transcode_jobs)),
     };
 
     let app = routes::build_router(state);

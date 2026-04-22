@@ -50,6 +50,39 @@ impl MediaSource {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HlsStatus {
+    Pending,
+    Processing,
+    Ready,
+    Failed,
+    NotApplicable,
+}
+
+impl HlsStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HlsStatus::Pending => "pending",
+            HlsStatus::Processing => "processing",
+            HlsStatus::Ready => "ready",
+            HlsStatus::Failed => "failed",
+            HlsStatus::NotApplicable => "not_applicable",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "pending" => Some(HlsStatus::Pending),
+            "processing" => Some(HlsStatus::Processing),
+            "ready" => Some(HlsStatus::Ready),
+            "failed" => Some(HlsStatus::Failed),
+            "not_applicable" => Some(HlsStatus::NotApplicable),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaItem {
     pub id: Uuid,
@@ -63,6 +96,9 @@ pub struct MediaItem {
     pub source: MediaSource,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub smb_source_id: Option<Uuid>,
+    pub hls_status: HlsStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hls_error: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -117,6 +153,23 @@ pub struct ListMediaQuery {
     pub media_type: Option<MediaType>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
+}
+
+// ── HLS models ──
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateHlsStatusRequest {
+    pub hls_status: HlsStatus,
+    pub hls_error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TranscodeJobStatus {
+    pub media_id: Uuid,
+    pub hls_status: HlsStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hls_error: Option<String>,
+    pub variants: Vec<String>,
 }
 
 // ── SMB source models ──

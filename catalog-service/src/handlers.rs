@@ -7,7 +7,7 @@ use common::error::AppError;
 use common::models::{
     CreateMediaRequest, CreateSmbSourceRequest, ListMediaQuery, ListMediaResponse,
     ListSmbSourcesResponse, MediaItem, RegisterMediaRequest, RegisterSmbMediaRequest, SmbSource,
-    UpdateMediaRequest, UpdateSmbSourceRequest,
+    UpdateHlsStatusRequest, UpdateMediaRequest, UpdateSmbSourceRequest,
 };
 use uuid::Uuid;
 
@@ -70,6 +70,15 @@ pub async fn register_smb_media(
 ) -> Result<(StatusCode, Json<MediaItem>), AppError> {
     let item = repo.register_smb(req).await?;
     Ok((StatusCode::CREATED, Json(item)))
+}
+
+pub async fn update_hls_status(
+    State(repo): State<Arc<SqliteCatalogRepository>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateHlsStatusRequest>,
+) -> Result<Json<MediaItem>, AppError> {
+    let item = repo.update_hls_status(id, req).await?;
+    Ok(Json(item))
 }
 
 // ── SMB Source handlers ──

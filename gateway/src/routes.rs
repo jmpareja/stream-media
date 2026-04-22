@@ -45,6 +45,7 @@ pub fn build_router(state: GatewayState) -> Router {
             Method::GET,
             Method::POST,
             Method::PUT,
+            Method::PATCH,
             Method::DELETE,
             Method::OPTIONS,
         ])
@@ -59,6 +60,7 @@ pub fn build_router(state: GatewayState) -> Router {
         .route("/api/users/{*rest}", any(proxy_to_user))
         .route("/stream/{*rest}", any(proxy_to_streaming))
         .route("/upload", any(proxy_to_streaming))
+        .route("/transcode/{*rest}", any(proxy_to_streaming))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
