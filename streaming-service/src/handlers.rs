@@ -24,6 +24,7 @@ pub struct AppState {
     pub catalog_url: String,
     pub media_store_path: PathBuf,
     pub transcode_semaphore: Arc<Semaphore>,
+    pub streaming_method: String,
 }
 
 // ── Helpers ──
@@ -282,8 +283,8 @@ pub async fn upload_media(
         .await
         .map_err(|e| AppError::Internal(format!("failed to parse register response: {e}")))?;
 
-    // Auto-trigger HLS transcode for video uploads
-    if item.media_type == MediaType::Video {
+    // Auto-trigger HLS transcode for video uploads when streaming method is HLS
+    if item.media_type == MediaType::Video && state.streaming_method == "hls" {
         let input_path = state.media_store_path.join(&file_path);
         spawn_transcode(&state, &item, input_path);
     }

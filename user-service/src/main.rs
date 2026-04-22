@@ -23,6 +23,17 @@ async fn main() {
             .expect("failed to initialize database"),
     );
 
+    // Seed admin user from environment if configured
+    if let (Ok(username), Ok(email), Ok(password)) = (
+        std::env::var("ADMIN_USERNAME"),
+        std::env::var("ADMIN_EMAIL"),
+        std::env::var("ADMIN_PASSWORD"),
+    ) {
+        if let Err(e) = repo.seed_admin(username, email, password).await {
+            tracing::error!("failed to seed admin user: {e}");
+        }
+    }
+
     let app = routes::build_router(repo);
     let addr = format!("0.0.0.0:{}", config.user_port);
     tracing::info!("user-service listening on {addr}");

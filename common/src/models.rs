@@ -221,6 +221,9 @@ pub struct User {
     pub username: String,
     pub email: String,
     pub display_name: Option<String>,
+    pub is_admin: bool,
+    #[serde(skip_serializing)]
+    pub password_hash: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -230,6 +233,7 @@ pub struct CreateUserRequest {
     pub username: String,
     pub email: String,
     pub display_name: Option<String>,
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

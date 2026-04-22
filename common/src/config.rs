@@ -12,6 +12,7 @@ pub struct ServiceConfig {
     pub database_path: PathBuf,
     pub user_database_path: PathBuf,
     pub smb_mount_base: PathBuf,
+    pub streaming_method: String,
 }
 
 impl ServiceConfig {
@@ -51,6 +52,8 @@ impl ServiceConfig {
             smb_mount_base: std::env::var("SMB_MOUNT_BASE")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| PathBuf::from("/mnt/smb")),
+            streaming_method: std::env::var("STREAMING_METHOD")
+                .unwrap_or_else(|_| "hls".to_string()),
         }
     }
 }
