@@ -7,8 +7,8 @@ use axum::http::{HeaderMap, HeaderValue, Response, StatusCode};
 use axum::Json;
 use common::error::AppError;
 use common::models::{
-    HlsStatus, MediaItem, MediaSource, MediaType, RegisterMediaRequest, SmbSource,
-    TranscodeJobStatus,
+    MediaItem, MediaSource, MediaType, RegisterMediaRequest, SmbSource,
+    TranscodeJobStatus, TranscodeStatus,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Semaphore;
@@ -24,6 +24,7 @@ pub struct AppState {
     pub catalog_url: String,
     pub media_store_path: PathBuf,
     pub transcode_semaphore: Arc<Semaphore>,
+    pub streaming_method: String,
 }
 
 // ── Helpers ──
@@ -91,6 +92,7 @@ fn spawn_transcode(state: &AppState, item: &MediaItem, input_path: PathBuf) {
     let media_store_path = state.media_store_path.clone();
     let semaphore = state.transcode_semaphore.clone();
     let item = item.clone();
+    let format = state.streaming_method.clone();
 
     tokio::spawn(transcode::run_transcode_job(
         client,
@@ -99,6 +101,7 @@ fn spawn_transcode(state: &AppState, item: &MediaItem, input_path: PathBuf) {
         item,
         input_path,
         semaphore,
+        format,
     ));
 }
 
@@ -148,7 +151,7 @@ pub async fn upload_media(
     let mut media_type: Option<MediaType> = None;
     let mut format: Option<String> = None;
     let mut duration_secs: Option<f64> = None;
-    let mut file_data: Option<(String, u64)> = None; // (relative_path, size)
+    let mut file_data: Option<(String, u64)> = None;
 
     while let Some(field) = multipart
         .next_field()
@@ -160,29 +163,19 @@ pub async fn upload_media(
         match name.as_str() {
             "title" => {
                 title = Some(
-                    field
-                        .text()
-                        .await
+                    field.text().await
                         .map_err(|e| AppError::BadRequest(format!("failed to read title: {e}")))?,
                 );
             }
             "description" => {
                 description = Some(
-                    field
-                        .text()
-                        .await
-                        .map_err(|e| {
-                            AppError::BadRequest(format!("failed to read description: {e}"))
-                        })?,
+                    field.text().await
+                        .map_err(|e| AppError::BadRequest(format!("failed to read description: {e}")))?,
                 );
             }
             "media_type" => {
-                let val = field
-                    .text()
-                    .await
-                    .map_err(|e| {
-                        AppError::BadRequest(format!("failed to read media_type: {e}"))
-                    })?;
+                let val = field.text().await
+                    .map_err(|e| AppError::BadRequest(format!("failed to read media_type: {e}")))?;
                 media_type = Some(
                     MediaType::from_str(&val)
                         .ok_or_else(|| AppError::BadRequest(format!("invalid media_type: {val}")))?,
@@ -190,21 +183,13 @@ pub async fn upload_media(
             }
             "format" => {
                 format = Some(
-                    field
-                        .text()
-                        .await
-                        .map_err(|e| {
-                            AppError::BadRequest(format!("failed to read format: {e}"))
-                        })?,
+                    field.text().await
+                        .map_err(|e| AppError::BadRequest(format!("failed to read format: {e}")))?,
                 );
             }
             "duration_secs" => {
-                let val = field
-                    .text()
-                    .await
-                    .map_err(|e| {
-                        AppError::BadRequest(format!("failed to read duration_secs: {e}"))
-                    })?;
+                let val = field.text().await
+                    .map_err(|e| AppError::BadRequest(format!("failed to read duration_secs: {e}")))?;
                 duration_secs = Some(val.parse().map_err(|_| {
                     AppError::BadRequest("invalid duration_secs".to_string())
                 })?);
@@ -213,9 +198,7 @@ pub async fn upload_media(
                 let fmt = format
                     .as_deref()
                     .ok_or_else(|| {
-                        AppError::BadRequest(
-                            "format field must appear before file field".to_string(),
-                        )
+                        AppError::BadRequest("format field must appear before file field".to_string())
                     })?
                     .to_string();
 
@@ -236,9 +219,7 @@ pub async fn upload_media(
 
                 file_data = Some((relative_path, size));
             }
-            _ => {
-                // Skip unknown fields
-            }
+            _ => {}
         }
     }
 
@@ -249,7 +230,6 @@ pub async fn upload_media(
     let (file_path, file_size) =
         file_data.ok_or_else(|| AppError::BadRequest("missing file".to_string()))?;
 
-    // Register with catalog service
     let register_req = RegisterMediaRequest {
         title,
         description,
@@ -282,8 +262,10 @@ pub async fn upload_media(
         .await
         .map_err(|e| AppError::Internal(format!("failed to parse register response: {e}")))?;
 
-    // Auto-trigger HLS transcode for video uploads
-    if item.media_type == MediaType::Video {
+    // Auto-trigger transcode for video uploads when method is HLS or DASH
+    if item.media_type == MediaType::Video
+        && (state.streaming_method == "hls" || state.streaming_method == "dash")
+    {
         let input_path = state.media_store_path.join(&file_path);
         spawn_transcode(&state, &item, input_path);
     }
@@ -354,17 +336,12 @@ pub async fn serve_hls_segment(
         return Err(AppError::BadRequest(format!("invalid variant: {variant}")));
     }
 
-    // Validate segment filename to prevent path traversal
     let valid_segment = segment.starts_with("segment_")
         && segment.ends_with(".ts")
         && segment.len() <= 16
-        && segment[8..segment.len() - 3]
-            .chars()
-            .all(|c| c.is_ascii_digit());
+        && segment[8..segment.len() - 3].chars().all(|c| c.is_ascii_digit());
     if !valid_segment {
-        return Err(AppError::BadRequest(format!(
-            "invalid segment name: {segment}"
-        )));
+        return Err(AppError::BadRequest(format!("invalid segment name: {segment}")));
     }
 
     let segment_path = state
@@ -384,12 +361,79 @@ pub async fn serve_hls_segment(
     let stream = ReaderStream::new(file);
 
     let mut response = Response::new(Body::from_stream(stream));
-    response
-        .headers_mut()
-        .insert("content-type", HeaderValue::from_static("video/mp2t"));
-    response
-        .headers_mut()
-        .insert("content-length", HeaderValue::from(metadata.len()));
+    response.headers_mut().insert("content-type", HeaderValue::from_static("video/mp2t"));
+    response.headers_mut().insert("content-length", HeaderValue::from(metadata.len()));
+    Ok(response)
+}
+
+// ── DASH serving ──
+
+pub async fn serve_dash_manifest(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Response<Body>, AppError> {
+    let mpd_path = state.media_store_path.join(id.to_string()).join("manifest.mpd");
+    if !mpd_path.exists() {
+        return Err(AppError::NotFound(
+            "DASH not available for this media item".to_string(),
+        ));
+    }
+
+    let file = tokio::fs::File::open(&mpd_path).await?;
+    let stream = ReaderStream::new(file);
+
+    let mut response = Response::new(Body::from_stream(stream));
+    response.headers_mut().insert(
+        "content-type",
+        HeaderValue::from_static("application/dash+xml"),
+    );
+    Ok(response)
+}
+
+pub async fn serve_dash_file(
+    State(state): State<AppState>,
+    Path((id, repr, file_name)): Path<(Uuid, String, String)>,
+) -> Result<Response<Body>, AppError> {
+    // Validate representation ID to prevent path traversal
+    // ffmpeg DASH uses representation IDs like "0", "1", "2", etc.
+    if !repr.chars().all(|c| c.is_ascii_digit()) || repr.len() > 4 {
+        return Err(AppError::BadRequest(format!("invalid representation: {repr}")));
+    }
+
+    // Validate file name: init.m4s, init.mp4, or chunk-stream*.m4s / chunk-*.m4s
+    let valid_name = (file_name.starts_with("init.") || file_name.starts_with("chunk-"))
+        && (file_name.ends_with(".m4s") || file_name.ends_with(".mp4"))
+        && file_name.len() <= 40
+        && !file_name.contains("..");
+    if !valid_name {
+        return Err(AppError::BadRequest(format!("invalid file name: {file_name}")));
+    }
+
+    let file_path = state
+        .media_store_path
+        .join(id.to_string())
+        .join(&repr)
+        .join(&file_name);
+
+    if !file_path.exists() {
+        return Err(AppError::NotFound(format!(
+            "DASH file not found: {repr}/{file_name}"
+        )));
+    }
+
+    let metadata = tokio::fs::metadata(&file_path).await?;
+    let file = tokio::fs::File::open(&file_path).await?;
+    let stream = ReaderStream::new(file);
+
+    let content_type = if file_name.ends_with(".m4s") {
+        "video/iso.segment"
+    } else {
+        "video/mp4"
+    };
+
+    let mut response = Response::new(Body::from_stream(stream));
+    response.headers_mut().insert("content-type", HeaderValue::from_str(content_type).unwrap());
+    response.headers_mut().insert("content-length", HeaderValue::from(metadata.len()));
     Ok(response)
 }
 
@@ -403,7 +447,13 @@ pub async fn start_transcode(
 
     if item.media_type != MediaType::Video {
         return Err(AppError::BadRequest(
-            "HLS transcoding is only supported for video".to_string(),
+            "transcoding is only supported for video".to_string(),
+        ));
+    }
+
+    if state.streaming_method == "range" {
+        return Err(AppError::BadRequest(
+            "transcoding is disabled when streaming method is 'range'".to_string(),
         ));
     }
 
@@ -421,7 +471,8 @@ pub async fn start_transcode(
         StatusCode::ACCEPTED,
         Json(serde_json::json!({
             "media_id": id,
-            "hls_status": "pending"
+            "transcode_status": "pending",
+            "transcode_format": state.streaming_method,
         })),
     ))
 }
@@ -433,10 +484,14 @@ pub async fn transcode_status(
     let item = fetch_media_item(&state, id).await?;
 
     let mut variants = Vec::new();
-    if item.hls_status == HlsStatus::Ready {
-        let hls_dir = state.media_store_path.join(id.to_string());
+    if item.transcode_status == TranscodeStatus::Ready {
+        let media_dir = state.media_store_path.join(id.to_string());
         for name in transcode::VARIANT_NAMES {
-            if hls_dir.join(name).join("playlist.m3u8").exists() {
+            let variant_dir = media_dir.join(name);
+            // Check for either HLS playlist or DASH stream file
+            if variant_dir.join("playlist.m3u8").exists()
+                || variant_dir.join("stream.mp4").exists()
+            {
                 variants.push((*name).to_string());
             }
         }
@@ -444,8 +499,9 @@ pub async fn transcode_status(
 
     Ok(Json(TranscodeJobStatus {
         media_id: item.id,
-        hls_status: item.hls_status,
-        hls_error: item.hls_error,
+        transcode_status: item.transcode_status,
+        transcode_format: item.transcode_format,
+        transcode_error: item.transcode_error,
         variants,
     }))
 }

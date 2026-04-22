@@ -1,0 +1,38 @@
+meta {
+  name: Register SMB Media
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/media/register-smb
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "title": "Network Movie",
+    "description": "Movie from the NAS share",
+    "media_type": "video",
+    "format": "mkv",
+    "source_id": "{{sourceId}}",
+    "path": "movies/example.mkv"
+  }
+}
+
+docs {
+  Registers a media item from a mounted SMB source.
+  The source must be mounted and the file must exist on the share.
+  File size is read automatically from the mounted filesystem.
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setVar("mediaId", res.body.id);
+  }
+}

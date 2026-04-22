@@ -6,6 +6,7 @@ services:
     container_name: stream-media-catalog
     ports:
       - "3001:3001"
+    env_file: .env
     environment:
       - CATALOG_PORT=3001
       - DATABASE_PATH=/data/catalog.db
@@ -21,6 +22,7 @@ services:
     container_name: stream-media-streaming
     ports:
       - "3002:3002"
+    env_file: .env
     environment:
       - STREAMING_PORT=3002
       - CATALOG_URL=http://catalog-service:3001
@@ -40,6 +42,7 @@ services:
     container_name: stream-media-user
     ports:
       - "3003:3003"
+    env_file: .env
     environment:
       - USER_PORT=3003
       - USER_DATABASE_PATH=/data/users.db
@@ -55,6 +58,7 @@ services:
     container_name: stream-media-gateway
     ports:
       - "3000:3000"
+    env_file: .env
     environment:
       - GATEWAY_PORT=3000
       - CATALOG_URL=http://catalog-service:3001

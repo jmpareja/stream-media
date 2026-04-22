@@ -52,7 +52,7 @@ impl MediaSource {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum HlsStatus {
+pub enum TranscodeStatus {
     Pending,
     Processing,
     Ready,
@@ -60,24 +60,24 @@ pub enum HlsStatus {
     NotApplicable,
 }
 
-impl HlsStatus {
+impl TranscodeStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
-            HlsStatus::Pending => "pending",
-            HlsStatus::Processing => "processing",
-            HlsStatus::Ready => "ready",
-            HlsStatus::Failed => "failed",
-            HlsStatus::NotApplicable => "not_applicable",
+            TranscodeStatus::Pending => "pending",
+            TranscodeStatus::Processing => "processing",
+            TranscodeStatus::Ready => "ready",
+            TranscodeStatus::Failed => "failed",
+            TranscodeStatus::NotApplicable => "not_applicable",
         }
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "pending" => Some(HlsStatus::Pending),
-            "processing" => Some(HlsStatus::Processing),
-            "ready" => Some(HlsStatus::Ready),
-            "failed" => Some(HlsStatus::Failed),
-            "not_applicable" => Some(HlsStatus::NotApplicable),
+            "pending" => Some(TranscodeStatus::Pending),
+            "processing" => Some(TranscodeStatus::Processing),
+            "ready" => Some(TranscodeStatus::Ready),
+            "failed" => Some(TranscodeStatus::Failed),
+            "not_applicable" => Some(TranscodeStatus::NotApplicable),
             _ => None,
         }
     }
@@ -96,9 +96,11 @@ pub struct MediaItem {
     pub source: MediaSource,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub smb_source_id: Option<Uuid>,
-    pub hls_status: HlsStatus,
+    pub transcode_status: TranscodeStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub hls_error: Option<String>,
+    pub transcode_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcode_error: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -155,20 +157,22 @@ pub struct ListMediaQuery {
     pub offset: Option<u32>,
 }
 
-// ── HLS models ──
+// ── Transcode models ──
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateHlsStatusRequest {
-    pub hls_status: HlsStatus,
-    pub hls_error: Option<String>,
+pub struct UpdateTranscodeStatusRequest {
+    pub transcode_status: TranscodeStatus,
+    pub transcode_format: Option<String>,
+    pub transcode_error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct TranscodeJobStatus {
     pub media_id: Uuid,
-    pub hls_status: HlsStatus,
+    pub transcode_status: TranscodeStatus,
+    pub transcode_format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub hls_error: Option<String>,
+    pub transcode_error: Option<String>,
     pub variants: Vec<String>,
 }
 
@@ -221,6 +225,9 @@ pub struct User {
     pub username: String,
     pub email: String,
     pub display_name: Option<String>,
+    pub is_admin: bool,
+    #[serde(skip_serializing)]
+    pub password_hash: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -230,6 +237,7 @@ pub struct CreateUserRequest {
     pub username: String,
     pub email: String,
     pub display_name: Option<String>,
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

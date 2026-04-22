@@ -1,0 +1,19 @@
+meta {
+  name: Mount SMB Source
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/sources/smb/{{sourceId}}/mount
+  body: none
+  auth: none
+}
+
+docs {
+  Mounts the SMB share on the server via CIFS.
+  The share must be network-reachable from the host.
+  Credentials are passed via a temporary file (not visible in /proc).
+
+  Returns the source with is_mounted: true on success.
+}

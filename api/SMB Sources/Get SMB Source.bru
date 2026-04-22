@@ -1,0 +1,11 @@
+meta {
+  name: Get SMB Source
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/sources/smb/{{sourceId}}
+  body: none
+  auth: none
+}

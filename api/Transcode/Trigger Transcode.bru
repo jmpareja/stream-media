@@ -1,0 +1,24 @@
+meta {
+  name: Trigger Transcode
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/transcode/{{mediaId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Triggers transcoding for a video media item.
+  The output format (HLS or DASH) is determined by the
+  STREAMING_METHOD environment variable.
+
+  Returns 202 Accepted immediately — transcoding runs
+  in the background. Poll the status endpoint to track progress.
+
+  Rejected with 400 if:
+  - Media type is not video
+  - Streaming method is "range" (no transcoding needed)
+}

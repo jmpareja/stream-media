@@ -1,0 +1,22 @@
+meta {
+  name: Master Playlist
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/stream/{{mediaId}}/hls/master.m3u8
+  body: none
+  auth: none
+}
+
+docs {
+  Returns the HLS master playlist listing all quality variants.
+  Content-Type: application/vnd.apple.mpegurl
+
+  The playlist contains #EXT-X-STREAM-INF entries for each
+  variant (360p, 720p, 1080p) with bandwidth and resolution info.
+  Players use this to select the appropriate quality level.
+
+  Returns 404 if HLS transcoding has not completed for this item.
+}

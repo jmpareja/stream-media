@@ -1,6 +1,9 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use argon2::password_hash::rand_core::OsRng;
+use argon2::password_hash::SaltString;
+use argon2::{Argon2, PasswordHasher};
 use chrono::Utc;
 use common::error::AppError;
 use common::models::{CreateUserRequest, ListUsersQuery, ListUsersResponse, UpdateUserRequest, User};
@@ -9,6 +12,15 @@ use uuid::Uuid;
 
 pub struct SqliteUserRepository {
     conn: Arc<Mutex<Connection>>,
+}
+
+fn hash_password(password: &str) -> Result<String, AppError> {
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    argon2
+        .hash_password(password.as_bytes(), &salt)
+        .map(|h| h.to_string())
+        .map_err(|e| AppError::Internal(format!("password hash failed: {e}")))
 }
 
 impl SqliteUserRepository {
@@ -21,21 +33,85 @@ impl SqliteUserRepository {
 
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS users (
-                id           TEXT PRIMARY KEY,
-                username     TEXT NOT NULL UNIQUE,
-                email        TEXT NOT NULL UNIQUE,
-                display_name TEXT,
-                created_at   TEXT NOT NULL,
-                updated_at   TEXT NOT NULL
+                id            TEXT PRIMARY KEY,
+                username      TEXT NOT NULL UNIQUE,
+                email         TEXT NOT NULL UNIQUE,
+                display_name  TEXT,
+                is_admin      INTEGER NOT NULL DEFAULT 0,
+                password_hash TEXT,
+                created_at    TEXT NOT NULL,
+                updated_at    TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_username ON users(username);
             CREATE INDEX IF NOT EXISTS idx_email ON users(email);",
         )
         .map_err(|e| AppError::Internal(format!("failed to create table: {e}")))?;
 
+        // Migrate: add new columns if missing
+        let has_password_hash: bool = conn
+            .prepare("SELECT password_hash FROM users LIMIT 0")
+            .is_ok();
+        if !has_password_hash {
+            conn.execute_batch(
+                "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+                 ALTER TABLE users ADD COLUMN password_hash TEXT;",
+            )
+            .map_err(|e| AppError::Internal(format!("failed to migrate columns: {e}")))?;
+        }
+
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
+    }
+
+    pub async fn seed_admin(
+        &self,
+        username: String,
+        email: String,
+        password: String,
+    ) -> Result<(), AppError> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+
+            // Check if admin already exists
+            let exists: bool = conn
+                .query_row(
+                    "SELECT COUNT(*) > 0 FROM users WHERE username = ?1",
+                    params![username],
+                    |row| row.get(0),
+                )
+                .map_err(|e| AppError::Internal(format!("query failed: {e}")))?;
+
+            if exists {
+                tracing::info!(username = %username, "admin user already exists, skipping seed");
+                return Ok(());
+            }
+
+            let id = Uuid::new_v4();
+            let now = Utc::now();
+            let password_hash = hash_password(&password)?;
+
+            conn.execute(
+                "INSERT INTO users (id, username, email, display_name, is_admin, password_hash, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6, ?7)",
+                params![
+                    id.to_string(),
+                    username,
+                    email,
+                    "Administrator",
+                    password_hash,
+                    now.to_rfc3339(),
+                    now.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| AppError::Internal(format!("admin seed insert failed: {e}")))?;
+
+            tracing::info!(username = %username, "admin user created");
+            Ok(())
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
     }
 
     pub async fn create(&self, req: CreateUserRequest) -> Result<User, AppError> {
@@ -45,14 +121,21 @@ impl SqliteUserRepository {
             let id = Uuid::new_v4();
             let now = Utc::now();
 
+            let password_hash = req
+                .password
+                .as_deref()
+                .map(hash_password)
+                .transpose()?;
+
             conn.execute(
-                "INSERT INTO users (id, username, email, display_name, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO users (id, username, email, display_name, is_admin, password_hash, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6, ?7)",
                 params![
                     id.to_string(),
                     req.username,
                     req.email,
                     req.display_name,
+                    password_hash,
                     now.to_rfc3339(),
                     now.to_rfc3339(),
                 ],
@@ -71,6 +154,8 @@ impl SqliteUserRepository {
                 username: req.username,
                 email: req.email,
                 display_name: req.display_name,
+                is_admin: false,
+                password_hash,
                 created_at: now,
                 updated_at: now,
             })
@@ -84,7 +169,10 @@ impl SqliteUserRepository {
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
             let mut stmt = conn
-                .prepare("SELECT id, username, email, display_name, created_at, updated_at FROM users WHERE id = ?1")
+                .prepare(
+                    "SELECT id, username, email, display_name, is_admin, password_hash, \
+                     created_at, updated_at FROM users WHERE id = ?1",
+                )
                 .map_err(|e| AppError::Internal(format!("prepare failed: {e}")))?;
 
             stmt.query_row(params![id.to_string()], |row| Ok(row_to_user(row)))
@@ -134,7 +222,8 @@ impl SqliteUserRepository {
 
             // Fetch items
             let select_sql = format!(
-                "SELECT id, username, email, display_name, created_at, updated_at \
+                "SELECT id, username, email, display_name, is_admin, password_hash, \
+                 created_at, updated_at \
                  FROM users {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?"
             );
             let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> = param_values;
@@ -210,7 +299,10 @@ impl SqliteUserRepository {
 
             // Re-fetch the updated row
             let mut stmt = conn
-                .prepare("SELECT id, username, email, display_name, created_at, updated_at FROM users WHERE id = ?1")
+                .prepare(
+                    "SELECT id, username, email, display_name, is_admin, password_hash, \
+                     created_at, updated_at FROM users WHERE id = ?1",
+                )
                 .map_err(|e| AppError::Internal(format!("prepare failed: {e}")))?;
 
             stmt.query_row(params![id.to_string()], |row| Ok(row_to_user(row)))
@@ -238,15 +330,20 @@ impl SqliteUserRepository {
     }
 }
 
+// Column indices: id(0), username(1), email(2), display_name(3),
+// is_admin(4), password_hash(5), created_at(6), updated_at(7)
 fn row_to_user(row: &rusqlite::Row) -> Result<User, AppError> {
     let id_str: String = row
         .get(0)
         .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?;
-    let created_str: String = row
+    let is_admin_int: i32 = row
         .get(4)
         .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?;
+    let created_str: String = row
+        .get(6)
+        .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?;
     let updated_str: String = row
-        .get(5)
+        .get(7)
         .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?;
 
     Ok(User {
@@ -260,6 +357,10 @@ fn row_to_user(row: &rusqlite::Row) -> Result<User, AppError> {
             .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?,
         display_name: row
             .get(3)
+            .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?,
+        is_admin: is_admin_int != 0,
+        password_hash: row
+            .get(5)
             .map_err(|e| AppError::Internal(format!("row get failed: {e}")))?,
         created_at: chrono::DateTime::parse_from_rfc3339(&created_str)
             .map_err(|e| AppError::Internal(format!("invalid datetime: {e}")))?

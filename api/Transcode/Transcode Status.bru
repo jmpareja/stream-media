@@ -1,0 +1,23 @@
+meta {
+  name: Transcode Status
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/transcode/{{mediaId}}/status
+  body: none
+  auth: none
+}
+
+docs {
+  Returns the current transcode status for a media item:
+  - pending: queued, waiting for a semaphore slot
+  - processing: ffmpeg is running
+  - ready: all variants transcoded, playlists written
+  - failed: transcode_error contains the ffmpeg stderr
+  - not_applicable: audio items or range-mode items
+
+  When status is "ready", the variants array lists
+  available quality levels (e.g. ["360p", "720p", "1080p"]).
+}

@@ -31,11 +31,14 @@ async fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(2);
 
+    tracing::info!(streaming_method = %config.streaming_method, "configured streaming method");
+
     let state = AppState {
         client: reqwest::Client::new(),
         catalog_url: config.catalog_url,
         media_store_path: config.media_store_path,
         transcode_semaphore: Arc::new(Semaphore::new(max_transcode_jobs)),
+        streaming_method: config.streaming_method,
     };
 
     let app = routes::build_router(state);
