@@ -55,7 +55,7 @@ CMD ["catalog-service"]
 # ── Streaming Service ──
 FROM debian:bookworm-slim AS streaming-service
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/streaming-service /usr/local/bin/streaming-service

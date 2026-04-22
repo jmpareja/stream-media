@@ -1,29 +1,34 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::{Multipart, Path, State};
-use axum::http::{HeaderMap, Response, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, Response, StatusCode};
 use axum::Json;
 use common::error::AppError;
-use common::models::{MediaItem, MediaSource, MediaType, RegisterMediaRequest, SmbSource};
+use common::models::{
+    HlsStatus, MediaItem, MediaSource, MediaType, RegisterMediaRequest, SmbSource,
+    TranscodeJobStatus,
+};
 use tokio::io::AsyncWriteExt;
+use tokio::sync::Semaphore;
+use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::range;
+use crate::transcode;
 
 #[derive(Clone)]
 pub struct AppState {
     pub client: reqwest::Client,
     pub catalog_url: String,
     pub media_store_path: PathBuf,
+    pub transcode_semaphore: Arc<Semaphore>,
 }
 
-pub async fn stream_media(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    headers: HeaderMap,
-) -> Result<Response<Body>, AppError> {
-    // Fetch metadata from catalog service
+// ── Helpers ──
+
+async fn fetch_media_item(state: &AppState, id: Uuid) -> Result<MediaItem, AppError> {
     let url = format!("{}/media/{id}", state.catalog_url);
     let resp = state
         .client
@@ -42,18 +47,18 @@ pub async fn stream_media(
         )));
     }
 
-    let item: MediaItem = resp
-        .json()
+    resp.json()
         .await
-        .map_err(|e| AppError::Internal(format!("failed to parse catalog response: {e}")))?;
+        .map_err(|e| AppError::Internal(format!("failed to parse catalog response: {e}")))
+}
 
-    let file_path = match item.source {
+async fn resolve_media_path(state: &AppState, item: &MediaItem) -> Result<PathBuf, AppError> {
+    match item.source {
         MediaSource::Smb => {
             let source_id = item.smb_source_id.ok_or_else(|| {
                 AppError::Internal("smb media item missing source_id".to_string())
             })?;
 
-            // Fetch source details from catalog to get mount_path
             let source_url = format!("{}/sources/smb/{source_id}", state.catalog_url);
             let source_resp = state
                 .client
@@ -74,10 +79,39 @@ pub async fn stream_media(
                 .await
                 .map_err(|e| AppError::Internal(format!("failed to parse source response: {e}")))?;
 
-            PathBuf::from(&source.mount_path).join(&item.file_path)
+            Ok(PathBuf::from(&source.mount_path).join(&item.file_path))
         }
-        MediaSource::Local => state.media_store_path.join(&item.file_path),
-    };
+        MediaSource::Local => Ok(state.media_store_path.join(&item.file_path)),
+    }
+}
+
+fn spawn_transcode(state: &AppState, item: &MediaItem, input_path: PathBuf) {
+    let client = state.client.clone();
+    let catalog_url = state.catalog_url.clone();
+    let media_store_path = state.media_store_path.clone();
+    let semaphore = state.transcode_semaphore.clone();
+    let item = item.clone();
+
+    tokio::spawn(transcode::run_transcode_job(
+        client,
+        catalog_url,
+        media_store_path,
+        item,
+        input_path,
+        semaphore,
+    ));
+}
+
+// ── Direct streaming ──
+
+pub async fn stream_media(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Result<Response<Body>, AppError> {
+    let item = fetch_media_item(&state, id).await?;
+    let file_path = resolve_media_path(&state, &item).await?;
+
     if !file_path.exists() {
         return Err(AppError::NotFound(format!(
             "media file not found: {}",
@@ -102,6 +136,8 @@ pub async fn stream_media(
         range::build_full_response(&file_path, file_size, &content_type).await
     }
 }
+
+// ── Upload ──
 
 pub async fn upload_media(
     State(state): State<AppState>,
@@ -220,7 +256,7 @@ pub async fn upload_media(
         media_type,
         format,
         duration_secs,
-        file_path,
+        file_path: file_path.clone(),
         file_size,
     };
 
@@ -246,5 +282,170 @@ pub async fn upload_media(
         .await
         .map_err(|e| AppError::Internal(format!("failed to parse register response: {e}")))?;
 
+    // Auto-trigger HLS transcode for video uploads
+    if item.media_type == MediaType::Video {
+        let input_path = state.media_store_path.join(&file_path);
+        spawn_transcode(&state, &item, input_path);
+    }
+
     Ok((StatusCode::CREATED, Json(item)))
+}
+
+// ── HLS serving ──
+
+pub async fn serve_hls_master(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Response<Body>, AppError> {
+    let master_path = state.media_store_path.join(id.to_string()).join("master.m3u8");
+    if !master_path.exists() {
+        return Err(AppError::NotFound(
+            "HLS not available for this media item".to_string(),
+        ));
+    }
+
+    let file = tokio::fs::File::open(&master_path).await?;
+    let stream = ReaderStream::new(file);
+
+    let mut response = Response::new(Body::from_stream(stream));
+    response.headers_mut().insert(
+        "content-type",
+        HeaderValue::from_static("application/vnd.apple.mpegurl"),
+    );
+    Ok(response)
+}
+
+pub async fn serve_hls_playlist(
+    State(state): State<AppState>,
+    Path((id, variant)): Path<(Uuid, String)>,
+) -> Result<Response<Body>, AppError> {
+    if !transcode::VARIANT_NAMES.contains(&variant.as_str()) {
+        return Err(AppError::BadRequest(format!("invalid variant: {variant}")));
+    }
+
+    let playlist_path = state
+        .media_store_path
+        .join(id.to_string())
+        .join(&variant)
+        .join("playlist.m3u8");
+
+    if !playlist_path.exists() {
+        return Err(AppError::NotFound(format!(
+            "HLS variant playlist not found: {variant}"
+        )));
+    }
+
+    let file = tokio::fs::File::open(&playlist_path).await?;
+    let stream = ReaderStream::new(file);
+
+    let mut response = Response::new(Body::from_stream(stream));
+    response.headers_mut().insert(
+        "content-type",
+        HeaderValue::from_static("application/vnd.apple.mpegurl"),
+    );
+    Ok(response)
+}
+
+pub async fn serve_hls_segment(
+    State(state): State<AppState>,
+    Path((id, variant, segment)): Path<(Uuid, String, String)>,
+) -> Result<Response<Body>, AppError> {
+    if !transcode::VARIANT_NAMES.contains(&variant.as_str()) {
+        return Err(AppError::BadRequest(format!("invalid variant: {variant}")));
+    }
+
+    // Validate segment filename to prevent path traversal
+    let valid_segment = segment.starts_with("segment_")
+        && segment.ends_with(".ts")
+        && segment.len() <= 16
+        && segment[8..segment.len() - 3]
+            .chars()
+            .all(|c| c.is_ascii_digit());
+    if !valid_segment {
+        return Err(AppError::BadRequest(format!(
+            "invalid segment name: {segment}"
+        )));
+    }
+
+    let segment_path = state
+        .media_store_path
+        .join(id.to_string())
+        .join(&variant)
+        .join(&segment);
+
+    if !segment_path.exists() {
+        return Err(AppError::NotFound(format!(
+            "HLS segment not found: {variant}/{segment}"
+        )));
+    }
+
+    let metadata = tokio::fs::metadata(&segment_path).await?;
+    let file = tokio::fs::File::open(&segment_path).await?;
+    let stream = ReaderStream::new(file);
+
+    let mut response = Response::new(Body::from_stream(stream));
+    response
+        .headers_mut()
+        .insert("content-type", HeaderValue::from_static("video/mp2t"));
+    response
+        .headers_mut()
+        .insert("content-length", HeaderValue::from(metadata.len()));
+    Ok(response)
+}
+
+// ── Transcode control ──
+
+pub async fn start_transcode(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<(StatusCode, Json<serde_json::Value>), AppError> {
+    let item = fetch_media_item(&state, id).await?;
+
+    if item.media_type != MediaType::Video {
+        return Err(AppError::BadRequest(
+            "HLS transcoding is only supported for video".to_string(),
+        ));
+    }
+
+    let input_path = resolve_media_path(&state, &item).await?;
+    if !input_path.exists() {
+        return Err(AppError::NotFound(format!(
+            "source file not found: {}",
+            input_path.display()
+        )));
+    }
+
+    spawn_transcode(&state, &item, input_path);
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({
+            "media_id": id,
+            "hls_status": "pending"
+        })),
+    ))
+}
+
+pub async fn transcode_status(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<TranscodeJobStatus>, AppError> {
+    let item = fetch_media_item(&state, id).await?;
+
+    let mut variants = Vec::new();
+    if item.hls_status == HlsStatus::Ready {
+        let hls_dir = state.media_store_path.join(id.to_string());
+        for name in transcode::VARIANT_NAMES {
+            if hls_dir.join(name).join("playlist.m3u8").exists() {
+                variants.push((*name).to_string());
+            }
+        }
+    }
+
+    Ok(Json(TranscodeJobStatus {
+        media_id: item.id,
+        hls_status: item.hls_status,
+        hls_error: item.hls_error,
+        variants,
+    }))
 }

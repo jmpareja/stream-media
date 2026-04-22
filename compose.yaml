@@ -25,6 +25,7 @@ services:
       - STREAMING_PORT=3002
       - CATALOG_URL=http://catalog-service:3001
       - MEDIA_STORE_PATH=/data/media-store
+      - TRANSCODE_MAX_JOBS=2
       - RUST_LOG=streaming_service=info,tower_http=info
     volumes:
       - media-data:/data/media-store
