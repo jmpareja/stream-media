@@ -11,6 +11,7 @@ pub struct ServiceConfig {
     pub media_store_path: PathBuf,
     pub database_path: PathBuf,
     pub user_database_path: PathBuf,
+    pub smb_mount_base: PathBuf,
 }
 
 impl ServiceConfig {
@@ -47,6 +48,9 @@ impl ServiceConfig {
             user_database_path: std::env::var("USER_DATABASE_PATH")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| PathBuf::from("./users.db")),
+            smb_mount_base: std::env::var("SMB_MOUNT_BASE")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("/mnt/smb")),
         }
     }
 }

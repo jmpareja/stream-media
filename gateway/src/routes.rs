@@ -54,6 +54,7 @@ pub fn build_router(state: GatewayState) -> Router {
     Router::new()
         .route("/api/media", any(proxy_to_catalog))
         .route("/api/media/{*rest}", any(proxy_to_catalog))
+        .route("/api/sources/{*rest}", any(proxy_to_catalog))
         .route("/api/users", any(proxy_to_user))
         .route("/api/users/{*rest}", any(proxy_to_user))
         .route("/stream/{*rest}", any(proxy_to_streaming))

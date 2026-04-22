@@ -5,7 +5,7 @@ use axum::extract::{Multipart, Path, State};
 use axum::http::{HeaderMap, Response, StatusCode};
 use axum::Json;
 use common::error::AppError;
-use common::models::{MediaItem, MediaType, RegisterMediaRequest};
+use common::models::{MediaItem, MediaSource, MediaType, RegisterMediaRequest, SmbSource};
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 
@@ -47,11 +47,41 @@ pub async fn stream_media(
         .await
         .map_err(|e| AppError::Internal(format!("failed to parse catalog response: {e}")))?;
 
-    let file_path = state.media_store_path.join(&item.file_path);
+    let file_path = match item.source {
+        MediaSource::Smb => {
+            let source_id = item.smb_source_id.ok_or_else(|| {
+                AppError::Internal("smb media item missing source_id".to_string())
+            })?;
+
+            // Fetch source details from catalog to get mount_path
+            let source_url = format!("{}/sources/smb/{source_id}", state.catalog_url);
+            let source_resp = state
+                .client
+                .get(&source_url)
+                .send()
+                .await
+                .map_err(|e| AppError::Internal(format!("source lookup failed: {e}")))?;
+
+            if !source_resp.status().is_success() {
+                return Err(AppError::Internal(format!(
+                    "source lookup returned status {}",
+                    source_resp.status()
+                )));
+            }
+
+            let source: SmbSource = source_resp
+                .json()
+                .await
+                .map_err(|e| AppError::Internal(format!("failed to parse source response: {e}")))?;
+
+            PathBuf::from(&source.mount_path).join(&item.file_path)
+        }
+        MediaSource::Local => state.media_store_path.join(&item.file_path),
+    };
     if !file_path.exists() {
         return Err(AppError::NotFound(format!(
             "media file not found: {}",
-            item.file_path
+            file_path.display()
         )));
     }
 

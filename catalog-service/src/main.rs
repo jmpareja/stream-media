@@ -19,7 +19,7 @@ async fn main() {
     let config = ServiceConfig::from_env();
 
     let repo = Arc::new(
-        db::SqliteCatalogRepository::new(&config.database_path)
+        db::SqliteCatalogRepository::new(&config.database_path, config.smb_mount_base)
             .expect("failed to initialize database"),
     );
 

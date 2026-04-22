@@ -5,12 +5,15 @@ use axum::http::StatusCode;
 use axum::Json;
 use common::error::AppError;
 use common::models::{
-    CreateMediaRequest, ListMediaQuery, ListMediaResponse, MediaItem, RegisterMediaRequest,
-    UpdateMediaRequest,
+    CreateMediaRequest, CreateSmbSourceRequest, ListMediaQuery, ListMediaResponse,
+    ListSmbSourcesResponse, MediaItem, RegisterMediaRequest, RegisterSmbMediaRequest, SmbSource,
+    UpdateMediaRequest, UpdateSmbSourceRequest,
 };
 use uuid::Uuid;
 
 use crate::db::SqliteCatalogRepository;
+
+// ── Media handlers ──
 
 pub async fn create_media(
     State(repo): State<Arc<SqliteCatalogRepository>>,
@@ -59,4 +62,70 @@ pub async fn register_upload(
 ) -> Result<(StatusCode, Json<MediaItem>), AppError> {
     let item = repo.register(req).await?;
     Ok((StatusCode::CREATED, Json(item)))
+}
+
+pub async fn register_smb_media(
+    State(repo): State<Arc<SqliteCatalogRepository>>,
+    Json(req): Json<RegisterSmbMediaRequest>,
+) -> Result<(StatusCode, Json<MediaItem>), AppError> {
+    let item = repo.register_smb(req).await?;
+    Ok((StatusCode::CREATED, Json(item)))
+}
+
+// ── SMB Source handlers ──
+
+pub async fn create_smb_source(
+    State(repo): State<Arc<SqliteCatalogRepository>>,
+    Json(req): Json<CreateSmbSourceRequest>,
+) -> Result<(StatusCode, Json<SmbSource>), AppError> {
+    let source = repo.create_smb_source(req).await?;
+    Ok((StatusCode::CREATED, Json(source)))
+}
+
+pub async fn get_smb_source(
+    State(repo): State<Arc<SqliteCatalogRepository>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<SmbSource>, AppError> {
+    let source = repo.get_smb_source(id).await?;
+    Ok(Json(source))
+}
+
+pub async fn list_smb_sources(
+    State(repo): State<Arc<SqliteCatalogRepository>>,
+) -> Result<Json<ListSmbSourcesResponse>, AppError> {
+    let response = repo.list_smb_sources().await?;
+    Ok(Json(response))
+}
+
+pub async fn update_smb_source(
+    State(repo): State<Arc<SqliteCatalogRepository>>,
+    Path(id): Path<Uuid>,
+    Json(req): Json<UpdateSmbSourceRequest>,
+) -> Result<Json<SmbSource>, AppError> {
+    let source = repo.update_smb_source(id, req).await?;
+    Ok(Json(source))
+}
+
+pub async fn delete_smb_source(
+    State(repo): State<Arc<SqliteCatalogRepository>>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    repo.delete_smb_source(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn mount_smb_source(
+    State(repo): State<Arc<SqliteCatalogRepository>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<SmbSource>, AppError> {
+    let source = repo.mount_smb_source(id).await?;
+    Ok(Json(source))
+}
+
+pub async fn unmount_smb_source(
+    State(repo): State<Arc<SqliteCatalogRepository>>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<SmbSource>, AppError> {
+    let source = repo.unmount_smb_source(id).await?;
+    Ok(Json(source))
 }
