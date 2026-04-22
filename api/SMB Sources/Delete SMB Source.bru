@@ -1,0 +1,16 @@
+meta {
+  name: Delete SMB Source
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{baseUrl}}/api/sources/smb/{{sourceId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Deletes the SMB source registration.
+  Fails with 400 if any media items still reference this source.
+}

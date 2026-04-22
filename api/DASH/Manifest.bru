@@ -1,0 +1,22 @@
+meta {
+  name: Manifest
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/stream/{{mediaId}}/dash/manifest.mpd
+  body: none
+  auth: none
+}
+
+docs {
+  Returns the DASH MPD (Media Presentation Description) manifest.
+  Content-Type: application/dash+xml
+
+  The XML manifest describes all available representations (quality levels),
+  segment templates, and adaptation sets. DASH players like dash.js or
+  Shaka Player use this to drive adaptive streaming.
+
+  Returns 404 if DASH transcoding has not completed for this item.
+}

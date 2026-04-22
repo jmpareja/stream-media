@@ -1,0 +1,19 @@
+meta {
+  name: Variant Playlist
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/stream/{{mediaId}}/hls/720p/playlist.m3u8
+  body: none
+  auth: none
+}
+
+docs {
+  Returns the HLS variant playlist for a specific quality level.
+  Content-Type: application/vnd.apple.mpegurl
+
+  Lists all .ts segments for this variant with duration info.
+  Valid variants: 360p, 720p, 1080p.
+}

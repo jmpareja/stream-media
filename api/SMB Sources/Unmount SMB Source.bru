@@ -1,0 +1,16 @@
+meta {
+  name: Unmount SMB Source
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/sources/smb/{{sourceId}}/unmount
+  body: none
+  auth: none
+}
+
+docs {
+  Unmounts the SMB share and removes the mount directory.
+  Returns the source with is_mounted: false on success.
+}

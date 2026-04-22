@@ -1,0 +1,20 @@
+meta {
+  name: Init Segment
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/stream/{{mediaId}}/dash/0/init.m4s
+  body: none
+  auth: none
+}
+
+docs {
+  Returns a DASH initialization segment for a representation.
+  Content-Type: video/iso.segment
+
+  The representation ID is numeric (0, 1, 2, ...) as assigned by ffmpeg.
+  The init segment contains codec and track configuration needed
+  before media chunks can be decoded.
+}

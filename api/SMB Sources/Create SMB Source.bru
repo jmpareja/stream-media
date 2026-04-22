@@ -1,0 +1,31 @@
+meta {
+  name: Create SMB Source
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/sources/smb
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "NAS Media Share",
+    "server": "nas.local",
+    "share_name": "media",
+    "username": "reader",
+    "password": "secret"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setVar("sourceId", res.body.id);
+  }
+}

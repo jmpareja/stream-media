@@ -1,0 +1,19 @@
+meta {
+  name: Segment
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/stream/{{mediaId}}/hls/720p/segment_000.ts
+  body: none
+  auth: none
+}
+
+docs {
+  Returns an HLS MPEG-TS segment.
+  Content-Type: video/mp2t
+
+  Segment names follow the pattern segment_NNN.ts (e.g. segment_000.ts).
+  Each segment is approximately 6 seconds of video.
+}

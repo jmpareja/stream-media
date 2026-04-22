@@ -1,0 +1,21 @@
+meta {
+  name: Update SMB Source
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/api/sources/smb/{{sourceId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "NAS Media Share (Updated)"
+  }
+}

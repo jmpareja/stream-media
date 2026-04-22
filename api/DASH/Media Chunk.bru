@@ -1,0 +1,20 @@
+meta {
+  name: Media Chunk
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/stream/{{mediaId}}/dash/0/chunk-00001.m4s
+  body: none
+  auth: none
+}
+
+docs {
+  Returns a DASH media chunk segment.
+  Content-Type: video/iso.segment
+
+  Chunk filenames follow the pattern chunk-NNNNN.m4s
+  (e.g. chunk-00001.m4s, chunk-00002.m4s).
+  Each chunk contains approximately 6 seconds of media data.
+}
