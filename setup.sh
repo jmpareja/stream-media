@@ -84,8 +84,13 @@ echo "  Admin user:       $ADMIN_USERNAME"
 echo "  Streaming method: $STREAMING_METHOD"
 echo "  Config written to: $ENV_FILE"
 echo
-echo "  Start the services with:"
+echo "  Start all services with:"
 echo "    docker compose up -d"
+echo
+echo "  Or deploy a single service:"
+echo "    ./deploy.sh up <service>      # catalog-service | streaming-service | user-service | gateway"
+echo "    ./deploy.sh logs <service>"
+echo "    ./deploy.sh --help            # full action list"
 echo
 echo "  Or run locally:"
 echo "    source .env && cargo run -p gateway &"

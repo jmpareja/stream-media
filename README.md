@@ -59,6 +59,19 @@ This generates a `.env` file with:
 docker compose up --build -d
 ```
 
+**Per-service deployment:**
+
+Use `./deploy.sh` to build, start, stop, or inspect a single service. Useful when iterating on one crate without recycling the rest of the stack.
+
+```bash
+./deploy.sh up streaming-service      # build and start one service
+./deploy.sh rebuild gateway           # --no-cache rebuild + force recreate
+./deploy.sh logs catalog-service      # follow logs
+./deploy.sh down user-service         # stop and remove container
+./deploy.sh up all                    # same as `docker compose up -d`
+./deploy.sh --help                    # full action list
+```
+
 **Without containers:**
 
 Prerequisites: Rust (edition 2024), ffmpeg (for HLS/DASH transcoding)
@@ -206,6 +219,7 @@ Set `RUST_LOG` to control log verbosity (e.g. `RUST_LOG=debug`).
 ```
 stream-media/
 ├── setup.sh                          # Interactive setup script
+├── deploy.sh                         # Per-service deploy wrapper (up/down/logs/rebuild/…)
 ├── Cargo.toml                        # Workspace definition
 ├── Containerfile                     # Multi-stage build (4 service targets)
 ├── compose.yaml                      # Container orchestration (reads .env)
