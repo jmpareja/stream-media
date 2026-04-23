@@ -136,6 +136,18 @@ All endpoints are accessed through the gateway on port 3000.
 | `GET` | `/api/users/{id}` | Get user |
 | `PUT` | `/api/users/{id}` | Update user |
 | `DELETE` | `/api/users/{id}` | Delete user |
+| `POST` | `/api/users/{id}/password` | Change own password (`current_password`, `new_password`) |
+| `POST` | `/api/users/password-reset/request` | Request a reset token by `identifier` (username or email) |
+| `POST` | `/api/users/password-reset/confirm` | Redeem a reset token (`token`, `new_password`) |
+
+### Password reset
+
+The reset flow is a standard two-step token exchange:
+
+1. `POST /api/users/password-reset/request` with `{"identifier": "alice@example.com"}`. A 1-hour single-use token is generated, stored SHA-256-hashed in `password_reset_tokens`, and returned in the response. **No mailer is wired up yet** — until SMTP is integrated the token is delivered in the HTTP body and logged at INFO. The response shape is uniform whether or not the user exists (values are `null` for unknown accounts), but an attacker can still differentiate by value; treat this endpoint as trusted-network only until email delivery replaces in-body token return.
+2. `POST /api/users/password-reset/confirm` with `{"token": "...", "new_password": "..."}`. Tokens older than an hour, or already consumed, return `400`.
+
+Passwords must be at least 8 characters.  The change-password endpoint (`POST /api/users/{id}/password`) requires the current password; the reset flow does not.
 
 ### Media
 

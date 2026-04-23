@@ -1,14 +1,17 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use argon2::password_hash::rand_core::OsRng;
-use argon2::password_hash::SaltString;
-use argon2::{Argon2, PasswordHasher};
-use chrono::Utc;
+use argon2::password_hash::rand_core::{OsRng, RngCore};
+use argon2::password_hash::{PasswordHash, SaltString};
+use argon2::{Argon2, PasswordHasher, PasswordVerifier};
+use chrono::{Duration, Utc};
 use common::error::AppError;
 use common::models::{CreateUserRequest, ListUsersQuery, ListUsersResponse, UpdateUserRequest, User};
 use rusqlite::{params, Connection};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
+
+const RESET_TOKEN_TTL_SECS: i64 = 3600;
 
 pub struct SqliteUserRepository {
     conn: Arc<Mutex<Connection>>,
@@ -21,6 +24,30 @@ fn hash_password(password: &str) -> Result<String, AppError> {
         .hash_password(password.as_bytes(), &salt)
         .map(|h| h.to_string())
         .map_err(|e| AppError::Internal(format!("password hash failed: {e}")))
+}
+
+fn verify_password(password: &str, hash: &str) -> Result<bool, AppError> {
+    let parsed = PasswordHash::new(hash)
+        .map_err(|e| AppError::Internal(format!("stored hash is invalid: {e}")))?;
+    Ok(Argon2::default()
+        .verify_password(password.as_bytes(), &parsed)
+        .is_ok())
+}
+
+fn generate_reset_token() -> String {
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn hash_token(token: &str) -> String {
+    let digest = Sha256::digest(token.as_bytes());
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+pub struct IssuedResetToken {
+    pub token: String,
+    pub expires_at: chrono::DateTime<Utc>,
 }
 
 impl SqliteUserRepository {
@@ -43,7 +70,15 @@ impl SqliteUserRepository {
                 updated_at    TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_username ON users(username);
-            CREATE INDEX IF NOT EXISTS idx_email ON users(email);",
+            CREATE INDEX IF NOT EXISTS idx_email ON users(email);
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                token_hash TEXT PRIMARY KEY,
+                user_id    TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                used_at    TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_reset_user ON password_reset_tokens(user_id);",
         )
         .map_err(|e| AppError::Internal(format!("failed to create table: {e}")))?;
 
@@ -323,6 +358,170 @@ impl SqliteUserRepository {
             if changed == 0 {
                 return Err(AppError::NotFound(format!("user {id} not found")));
             }
+            Ok(())
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
+    }
+
+    /// Issue a password-reset token for the user matching `identifier`
+    /// (username OR email). Returns None when no user matches — callers
+    /// should respond identically in both cases to avoid user enumeration.
+    pub async fn request_password_reset(
+        &self,
+        identifier: String,
+    ) -> Result<Option<IssuedResetToken>, AppError> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+
+            let user_id: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM users WHERE username = ?1 OR email = ?1",
+                    params![identifier],
+                    |row| row.get(0),
+                )
+                .ok();
+
+            let Some(user_id) = user_id else {
+                return Ok(None);
+            };
+
+            let token = generate_reset_token();
+            let token_hash = hash_token(&token);
+            let now = Utc::now();
+            let expires_at = now + Duration::seconds(RESET_TOKEN_TTL_SECS);
+
+            // Invalidate any previous outstanding tokens for this user so only
+            // the most recently issued token is usable.
+            conn.execute(
+                "DELETE FROM password_reset_tokens WHERE user_id = ?1 AND used_at IS NULL",
+                params![user_id],
+            )
+            .map_err(|e| AppError::Internal(format!("clear prior tokens failed: {e}")))?;
+
+            conn.execute(
+                "INSERT INTO password_reset_tokens (token_hash, user_id, expires_at, used_at, created_at)
+                 VALUES (?1, ?2, ?3, NULL, ?4)",
+                params![
+                    token_hash,
+                    user_id,
+                    expires_at.to_rfc3339(),
+                    now.to_rfc3339(),
+                ],
+            )
+            .map_err(|e| AppError::Internal(format!("token insert failed: {e}")))?;
+
+            Ok(Some(IssuedResetToken { token, expires_at }))
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
+    }
+
+    pub async fn confirm_password_reset(
+        &self,
+        token: String,
+        new_password: String,
+    ) -> Result<(), AppError> {
+        let new_hash = hash_password(&new_password)?;
+        let token_hash = hash_token(&token);
+        let conn = self.conn.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let mut conn = conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+            let tx = conn
+                .transaction()
+                .map_err(|e| AppError::Internal(format!("tx begin failed: {e}")))?;
+
+            let row: Option<(String, String, Option<String>)> = tx
+                .query_row(
+                    "SELECT user_id, expires_at, used_at FROM password_reset_tokens \
+                     WHERE token_hash = ?1",
+                    params![token_hash],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .ok();
+
+            let Some((user_id, expires_at, used_at)) = row else {
+                return Err(AppError::BadRequest("invalid reset token".to_string()));
+            };
+
+            if used_at.is_some() {
+                return Err(AppError::BadRequest("reset token already used".to_string()));
+            }
+
+            let expires = chrono::DateTime::parse_from_rfc3339(&expires_at)
+                .map_err(|e| AppError::Internal(format!("invalid expiry: {e}")))?
+                .with_timezone(&Utc);
+            if expires < Utc::now() {
+                return Err(AppError::BadRequest("reset token has expired".to_string()));
+            }
+
+            let now = Utc::now();
+            tx.execute(
+                "UPDATE users SET password_hash = ?1, updated_at = ?2 WHERE id = ?3",
+                params![new_hash, now.to_rfc3339(), user_id],
+            )
+            .map_err(|e| AppError::Internal(format!("password update failed: {e}")))?;
+
+            tx.execute(
+                "UPDATE password_reset_tokens SET used_at = ?1 WHERE token_hash = ?2",
+                params![now.to_rfc3339(), token_hash],
+            )
+            .map_err(|e| AppError::Internal(format!("token mark-used failed: {e}")))?;
+
+            tx.commit()
+                .map_err(|e| AppError::Internal(format!("tx commit failed: {e}")))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
+    }
+
+    pub async fn change_password(
+        &self,
+        id: Uuid,
+        current_password: String,
+        new_password: String,
+    ) -> Result<(), AppError> {
+        let new_hash = hash_password(&new_password)?;
+        let conn = self.conn.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+
+            let stored: Option<String> = conn
+                .query_row(
+                    "SELECT password_hash FROM users WHERE id = ?1",
+                    params![id.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(|e| match e {
+                    rusqlite::Error::QueryReturnedNoRows => {
+                        AppError::NotFound(format!("user {id} not found"))
+                    }
+                    _ => AppError::Internal(format!("query failed: {e}")),
+                })?;
+
+            let Some(stored_hash) = stored else {
+                return Err(AppError::BadRequest(
+                    "user has no password set; use password-reset flow".to_string(),
+                ));
+            };
+
+            if !verify_password(&current_password, &stored_hash)? {
+                return Err(AppError::BadRequest(
+                    "current password is incorrect".to_string(),
+                ));
+            }
+
+            let now = Utc::now();
+            conn.execute(
+                "UPDATE users SET password_hash = ?1, updated_at = ?2 WHERE id = ?3",
+                params![new_hash, now.to_rfc3339(), id.to_string()],
+            )
+            .map_err(|e| AppError::Internal(format!("password update failed: {e}")))?;
+
             Ok(())
         })
         .await

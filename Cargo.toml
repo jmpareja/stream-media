@@ -28,4 +28,5 @@ bytes = "1"
 mime_guess = "2"
 tokio-util = { version = "0.7", features = ["io"] }
 argon2 = { version = "0.5", features = ["std"] }
+sha2 = "0.10"
 common = { path = "common" }

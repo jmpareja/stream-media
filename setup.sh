@@ -41,7 +41,7 @@ echo "     Players automatically switch quality based on network speed."
 echo
 echo "  2) DASH - Dynamic Adaptive Streaming over HTTP"
 echo "     Similar to HLS but uses the MPEG-DASH standard."
-echo "     (not yet implemented - will fall back to HTTP range)"
+echo "     Videos are transcoded into .mpd manifest + .m4s chunks."
 echo
 echo "  3) HTTP Range - Direct file streaming"
 echo "     Serves the original file as-is with byte-range support."

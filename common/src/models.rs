@@ -259,3 +259,33 @@ pub struct ListUsersQuery {
     pub limit: Option<u32>,
     pub offset: Option<u32>,
 }
+
+// ── Password management ──
+
+#[derive(Debug, Deserialize)]
+pub struct PasswordResetRequest {
+    pub identifier: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PasswordResetResponse {
+    pub message: String,
+    /// Returned only because no mailer is wired up yet. Once SMTP is added,
+    /// drop this (and `expires_at`) and deliver the token out-of-band. Until
+    /// then it also leaks whether the account exists — acceptable for a
+    /// self-hosted demo, not acceptable for production.
+    pub reset_token: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PasswordResetConfirmRequest {
+    pub token: String,
+    pub new_password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
