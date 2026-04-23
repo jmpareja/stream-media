@@ -1,0 +1,290 @@
+/* Layout */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+  z-index: 10;
+}
+
+@media (prefers-color-scheme: dark) {
+  .topbar {
+    background: #1b1c22;
+    border-bottom-color: #2e303a;
+  }
+}
+
+.brand {
+  font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+}
+
+.burger {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: space-around;
+  padding: 6px 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.burger span {
+  display: block;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 3rem;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+h2 {
+  margin: 0 0 1rem;
+}
+
+/* Drawer */
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 20;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(280px, 80vw);
+  background: #fff;
+  border-right: 1px solid #ddd;
+  padding: 3.5rem 1rem 1rem;
+  transform: translateX(-100%);
+  transition: transform 200ms ease;
+  z-index: 30;
+}
+
+.drawer.open {
+  transform: translateX(0);
+}
+
+@media (prefers-color-scheme: dark) {
+  .drawer {
+    background: #1b1c22;
+    border-right-color: #2e303a;
+  }
+}
+
+.drawer ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.drawer a,
+.drawer .link-button {
+  display: block;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+  text-align: left;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.drawer a:hover,
+.drawer .link-button:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  .drawer a:hover,
+  .drawer .link-button:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+.drawer a.active {
+  background: rgba(0, 0, 0, 0.08);
+  font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  .drawer a.active {
+    background: rgba(255, 255, 255, 0.12);
+  }
+}
+
+.drawer-user {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  color: #666;
+  border-top: 1px solid #eee;
+}
+
+@media (prefers-color-scheme: dark) {
+  .drawer-user {
+    color: #9ca3af;
+    border-top-color: #2e303a;
+  }
+}
+
+/* Generic content */
+
+.error {
+  color: #c00;
+}
+
+.count {
+  color: #666;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.media-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.media-item {
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+}
+
+.media-title {
+  font-weight: 600;
+  margin-bottom: 0.375rem;
+}
+
+.media-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.media-desc {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: #444;
+}
+
+.status {
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  background: #eee;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+}
+
+.status-completed {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-failed {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.status-in_progress,
+.status-pending {
+  background: #fff3cd;
+  color: #856404;
+}
+
+/* Forms */
+
+.auth-form {
+  display: grid;
+  gap: 1rem;
+  max-width: 360px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.auth-form input {
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: inherit;
+  color: inherit;
+}
+
+.auth-form input:focus {
+  outline: 2px solid #4c8bf5;
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.auth-form button,
+.logout {
+  font: inherit;
+  padding: 0.55rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #4c8bf5;
+  background: #4c8bf5;
+  color: #fff;
+  cursor: pointer;
+}
+
+.auth-form button[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.logout {
+  margin-top: 1rem;
+  background: transparent;
+  color: inherit;
+  border-color: #c66;
+}
+
+/* Profile */
+
+.profile {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.5rem 1rem;
+}
+
+.profile dt {
+  font-weight: 600;
+  color: #666;
+}
+
+.profile dd {
+  margin: 0;
+}
