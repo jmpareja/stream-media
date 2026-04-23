@@ -59,6 +59,19 @@ This generates a `.env` file with:
 docker compose up --build -d
 ```
 
+**Per-service deployment:**
+
+Use `./deploy.sh` to build, start, stop, or inspect a single service. Useful when iterating on one crate without recycling the rest of the stack.
+
+```bash
+./deploy.sh up streaming-service      # build and start one service
+./deploy.sh rebuild gateway           # --no-cache rebuild + force recreate
+./deploy.sh logs catalog-service      # follow logs
+./deploy.sh down user-service         # stop and remove container
+./deploy.sh up all                    # same as `docker compose up -d`
+./deploy.sh --help                    # full action list
+```
+
 **Without containers:**
 
 Prerequisites: Rust (edition 2024), ffmpeg (for HLS/DASH transcoding)
@@ -123,6 +136,18 @@ All endpoints are accessed through the gateway on port 3000.
 | `GET` | `/api/users/{id}` | Get user |
 | `PUT` | `/api/users/{id}` | Update user |
 | `DELETE` | `/api/users/{id}` | Delete user |
+| `POST` | `/api/users/{id}/password` | Change own password (`current_password`, `new_password`) |
+| `POST` | `/api/users/password-reset/request` | Request a reset token by `identifier` (username or email) |
+| `POST` | `/api/users/password-reset/confirm` | Redeem a reset token (`token`, `new_password`) |
+
+### Password reset
+
+The reset flow is a standard two-step token exchange:
+
+1. `POST /api/users/password-reset/request` with `{"identifier": "alice@example.com"}`. A 1-hour single-use token is generated, stored SHA-256-hashed in `password_reset_tokens`, and returned in the response. **No mailer is wired up yet** — until SMTP is integrated the token is delivered in the HTTP body and logged at INFO. The response shape is uniform whether or not the user exists (values are `null` for unknown accounts), but an attacker can still differentiate by value; treat this endpoint as trusted-network only until email delivery replaces in-body token return.
+2. `POST /api/users/password-reset/confirm` with `{"token": "...", "new_password": "..."}`. Tokens older than an hour, or already consumed, return `400`.
+
+Passwords must be at least 8 characters.  The change-password endpoint (`POST /api/users/{id}/password`) requires the current password; the reset flow does not.
 
 ### Media
 
@@ -206,6 +231,7 @@ Set `RUST_LOG` to control log verbosity (e.g. `RUST_LOG=debug`).
 ```
 stream-media/
 ├── setup.sh                          # Interactive setup script
+├── deploy.sh                         # Per-service deploy wrapper (up/down/logs/rebuild/…)
 ├── Cargo.toml                        # Workspace definition
 ├── Containerfile                     # Multi-stage build (4 service targets)
 ├── compose.yaml                      # Container orchestration (reads .env)

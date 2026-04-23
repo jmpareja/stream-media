@@ -41,7 +41,7 @@ echo "     Players automatically switch quality based on network speed."
 echo
 echo "  2) DASH - Dynamic Adaptive Streaming over HTTP"
 echo "     Similar to HLS but uses the MPEG-DASH standard."
-echo "     (not yet implemented - will fall back to HTTP range)"
+echo "     Videos are transcoded into .mpd manifest + .m4s chunks."
 echo
 echo "  3) HTTP Range - Direct file streaming"
 echo "     Serves the original file as-is with byte-range support."
@@ -84,8 +84,13 @@ echo "  Admin user:       $ADMIN_USERNAME"
 echo "  Streaming method: $STREAMING_METHOD"
 echo "  Config written to: $ENV_FILE"
 echo
-echo "  Start the services with:"
+echo "  Start all services with:"
 echo "    docker compose up -d"
+echo
+echo "  Or deploy a single service:"
+echo "    ./deploy.sh up <service>      # catalog-service | streaming-service | user-service | gateway"
+echo "    ./deploy.sh logs <service>"
+echo "    ./deploy.sh --help            # full action list"
 echo
 echo "  Or run locally:"
 echo "    source .env && cargo run -p gateway &"
