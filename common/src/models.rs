@@ -289,3 +289,9 @@ pub struct ChangePasswordRequest {
     pub current_password: String,
     pub new_password: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub identifier: String,
+    pub password: String,
+}

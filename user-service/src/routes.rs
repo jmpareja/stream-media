@@ -10,6 +10,7 @@ use crate::handlers;
 pub fn build_router(repo: Arc<SqliteUserRepository>) -> Router {
     Router::new()
         .route("/users", get(handlers::list_users).post(handlers::create_user))
+        .route("/users/login", post(handlers::login))
         .route(
             "/users/password-reset/request",
             post(handlers::request_password_reset),

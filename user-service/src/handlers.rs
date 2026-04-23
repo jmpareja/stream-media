@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::Json;
 use common::error::AppError;
 use common::models::{
-    ChangePasswordRequest, CreateUserRequest, ListUsersQuery, ListUsersResponse,
+    ChangePasswordRequest, CreateUserRequest, ListUsersQuery, ListUsersResponse, LoginRequest,
     PasswordResetConfirmRequest, PasswordResetRequest, PasswordResetResponse, UpdateUserRequest,
     User,
 };
@@ -113,4 +113,12 @@ pub async fn change_password(
     repo.change_password(id, req.current_password, req.new_password)
         .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn login(
+    State(repo): State<Arc<SqliteUserRepository>>,
+    Json(req): Json<LoginRequest>,
+) -> Result<Json<User>, AppError> {
+    let user = repo.authenticate(req.identifier, req.password).await?;
+    Ok(Json(user))
 }

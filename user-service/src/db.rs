@@ -527,6 +527,47 @@ impl SqliteUserRepository {
         .await
         .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
     }
+
+    /// Verify credentials and return the matching user. Same error for
+    /// unknown identifier and bad password so callers can't enumerate.
+    pub async fn authenticate(
+        &self,
+        identifier: String,
+        password: String,
+    ) -> Result<User, AppError> {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().map_err(|e| AppError::Internal(e.to_string()))?;
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, username, email, display_name, is_admin, password_hash, \
+                     created_at, updated_at \
+                     FROM users WHERE username = ?1 OR email = ?1",
+                )
+                .map_err(|e| AppError::Internal(format!("prepare failed: {e}")))?;
+
+            let user = stmt
+                .query_row(params![identifier], |row| Ok(row_to_user(row)))
+                .map_err(|e| match e {
+                    rusqlite::Error::QueryReturnedNoRows => {
+                        AppError::Unauthorized("invalid credentials".to_string())
+                    }
+                    _ => AppError::Internal(format!("query failed: {e}")),
+                })??;
+
+            let Some(ref stored_hash) = user.password_hash else {
+                return Err(AppError::Unauthorized("invalid credentials".to_string()));
+            };
+
+            if !verify_password(&password, stored_hash)? {
+                return Err(AppError::Unauthorized("invalid credentials".to_string()));
+            }
+
+            Ok(user)
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("task join error: {e}")))?
+    }
 }
 
 // Column indices: id(0), username(1), email(2), display_name(3),
